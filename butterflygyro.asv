@@ -1,0 +1,135 @@
+clc
+clear
+
+%%
+
+addpath("given_functions")
+addpath("Systems/PEECmodel")
+addpath("Systems/ButterflyGyro-dim1e5-gyro")
+
+%%
+
+beta = 1e-6;
+
+[gyro.B, rows, cols_B, entries] = mmread('gyro.B');
+[gyro.C, cols_C, rows, entries] = mmread('gyro.C');
+gyro.C = gyro.C';
+[gyro.K, rows, cols, entries] = mmread('gyro.K');
+[gyro.M, rows, cols, entries] = mmread('gyro.M');
+
+gyro.E = [gyro.M zeros(rows,cols); beta * gyro.K eye(rows)];
+gyro.A = [zeros(rows,cols) eye(rows); gyro.K zeros(rows,cols)];
+gyro.F = [zeros(rows,cols_B); gyro.B];
+gyro.G = [gyro.C; zeros(rows,cols_C)];
+
+%%
+
+E = gyro.E;
+A = gyro.A;
+f = gyro.F;
+
+
+%%
+block_size = size(f,2);
+fprintf(1,'doing invA_Ef\n');
+
+invA_E = A\E;
+invA_f = A\f;
+
+fprintf(1,'calling barnoldi\n');
+[X, H, R1] = barnoldi(invA_E, invA_f, 300, 1);
+
+fprintf(1,'computing reduced system\n');
+
+%%
+save invA_E
+%%
+save invA_f
+%%
+save("X_gyro","X")
+%%
+
+num_out = 1;
+
+g = gyro.G(:,num_out);
+
+i = sqrt(-1);
+freq = 10.^[-2:0.1:2];
+
+resp_gyro = bode_from_system(A,E,f,g,i*2*pi().*freq);
+
+figure(10)
+subplot(1, 2, 1);
+loglog(freq, abs(resp_gyro), '-b'); % Amplitude plot
+title('Amplitude Response');
+xlabel('frequency')
+ylabel('|H(s)|')
+grid on;
+
+subplot(1, 2, 2);
+semilogx(freq, angle(resp_gyro), '-b'); % Phase plot
+title('Phase Response');
+xlabel('frequency')
+ylabel('arg(H(s))')
+grid on;
+
+%%
+save resp_gyro
+
+%%
+i = sqrt(-1);
+freq = 10.^[-2:0.1:2];
+
+%change order m
+m = 3;
+num_out = 1;
+
+g = gyro.G(:,num_out);
+
+Xm= X(:,1:m+1);
+Cr = Xm'*E*Xm;
+Gr = Xm'*A*Xm;
+
+E_prima3 = Cr(1:m,1:m);
+A_prima3 = Gr(1:m,1:m);
+f_prima3 = transpose(Xm(:,1:m))*f;
+g_prima3 = transpose(Xm(:,1:m))*g ;
+
+resp_gyro3 = bode_from_system(A_prima3,E_prima3,f_prima3,g_prima3,i*2*pi().*freq);
+
+%change order m
+m = 10;
+
+Xm= X(:,1:m+1);
+Cr = Xm'*E*Xm;
+Gr = Xm'*A*Xm;
+
+E_prima10 = Cr(1:m,1:m);
+A_prima10 = Gr(1:m,1:m);
+f_prima10 = transpose(X(:,1:m))*f;
+g_prima10 = transpose(Xm(:,1:m))*g * X(:,1:m);
+
+resp_gyro10 = bode_from_system(A_prima10,E_prima10,f_prima10,g_prima10,i*2*pi().*freq);
+
+figure(10)
+
+loglog(freq, abs(resp_gyro3), '-g'); % Amplitude plot
+hold on
+loglog(freq, abs(resp_gyro10), '-r');
+loglog(freq, abs(resp_gyro), '-b');
+title('Amplitude Response');
+xlabel('frequency')
+ylabel('|H(s)|')
+legend('order50','order10','order3','original')
+grid on;
+
+figure(11)
+semilogx(freq, angle(resp_gyro3), '-g'); % Phase plot
+hold on
+semilogx(freq, angle(resp_gyro10), '-r'); % Phase plot
+semilogx(freq, angle(resp_gyro), '-b'); % Phase plot
+title('Phase Response');
+xlabel('frequency')
+ylabel('arg(H(s))')
+legend('order50','order10','order3','original')
+grid on;
